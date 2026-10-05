@@ -28,7 +28,7 @@ docker-compose.yml
 ## نقشه راه
 
 1. ✅ راه‌اندازی پروژه و Docker Compose
-2. احراز هویت JWT
+2. ✅ احراز هویت JWT
 3. اتصال به MinIO
 4. آپلود با اعتبارسنجی
 5. Presigned URL
