@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "users",
     "rest_framework_simplejwt",
+    "storages",
 ]
 
 MIDDLEWARE = [
@@ -87,6 +88,29 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
    
 }
+
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
+MINIO_BUCKET = os.getenv("MINIO_BUCKET")
+MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER")
+MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD")
+
+
+STORAGES = {
+    "default": {
+        "BACKEND": "storages.backends.s3.S3Storage",
+        "OPTIONS": {
+            "endpoint_url": MINIO_ENDPOINT,
+            "bucket_name": MINIO_BUCKET,
+            "access_key": MINIO_ROOT_USER,
+            "secret_key": MINIO_ROOT_PASSWORD,
+            "addressing_style": "path",
+        },
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },  
+}
+
 
 
 LANGUAGE_CODE = "en-us"
