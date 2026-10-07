@@ -127,3 +127,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 #users
 AUTH_USER_MODEL = "users.User"
+
+#file size
+MAX_UPLOAD_SIZE = 10 * 1024 * 1024
+ALLOWED_UPLOAD_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
