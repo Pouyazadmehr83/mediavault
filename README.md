@@ -31,7 +31,7 @@ docker-compose.yml
 2. ✅ احراز هویت JWT
 3. ✅ اتصال به MinIO
 4. ✅ آپلود با اعتبارسنجی
-5. Presigned URL
+5. ✅ Presigned URL
 6. آلبوم و permission
 7. Thumbnail با Celery
 8. لینک اشتراک موقت
