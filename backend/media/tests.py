@@ -114,3 +114,24 @@ class MediaAPITests(APITestCase):
         res_delete = self.client.delete(detail_url)
         self.assertEqual(res_delete.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(MediaFile.objects.filter(id=file_id).exists())
+
+    def test_presigned_url_generation(self):
+        self.client.force_authenticate(user=self.user1)
+        img = generate_test_image("test_url.png")
+        res = self.client.post(self.list_create_url, {"file": img}, format="multipart")
+        file_id = res.data["id"]
+
+        url_endpoint = reverse("media-file-url", kwargs={"pk": file_id})
+
+        # User 2 shouldn't be able to get URL for User 1's file
+        self.client.force_authenticate(user=self.user2)
+        res_other = self.client.get(url_endpoint)
+        self.assertEqual(res_other.status_code, status.HTTP_404_NOT_FOUND)
+
+        # User 1 should get URL
+        self.client.force_authenticate(user=self.user1)
+        res_url = self.client.get(url_endpoint)
+        self.assertEqual(res_url.status_code, status.HTTP_200_OK)
+        self.assertIn("download_url", res_url.data)
+        self.assertIn("expires_in", res_url.data)
+        self.assertTrue(res_url.data["download_url"].startswith("http"))

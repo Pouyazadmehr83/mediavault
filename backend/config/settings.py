@@ -94,6 +94,7 @@ MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
 MINIO_BUCKET = os.getenv("MINIO_BUCKET")
 MINIO_ROOT_USER = os.getenv("MINIO_ROOT_USER")
 MINIO_ROOT_PASSWORD = os.getenv("MINIO_ROOT_PASSWORD")
+MINIO_PUBLIC_ENDPOINT = os.getenv("MINIO_PUBLIC_ENDPOINT", "http://localhost:9000")
 
 
 STORAGES = {
@@ -131,3 +132,6 @@ AUTH_USER_MODEL = "users.User"
 #file size
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024
 ALLOWED_UPLOAD_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+
+#presigned url expire time
+PRESIGNED_URL_EXPIRE_SECONDS = 3600
