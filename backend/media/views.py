@@ -1,8 +1,14 @@
+# pyrefly: ignore [missing-import]
 from rest_framework.generics import ListCreateAPIView, RetrieveDestroyAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser
+from rest_framework.views import APIView
+from rest_framework.response import Response
 from .models import MediaFile
+from django.shortcuts import get_object_or_404
 from .serializers import MediaFileSerializer
+from .services import generate_presigned_url
+from django.conf import settings
 
 
 class MediaListCreateView(ListCreateAPIView):
@@ -11,7 +17,7 @@ class MediaListCreateView(ListCreateAPIView):
     parser_classes = [MultiPartParser]
 
     def get_queryset(self):
-        return MediaFile.objects.filter(owner=self.request.user)
+        return MediaFile.objects.filter(owner=self.request.user)    
 
 
 class MediaDetailView(RetrieveDestroyAPIView):
@@ -20,3 +26,19 @@ class MediaDetailView(RetrieveDestroyAPIView):
 
     def get_queryset(self):
         return MediaFile.objects.filter(owner=self.request.user)
+
+
+class MediaFileURLView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        media_file = get_object_or_404(
+            MediaFile,
+            id=pk,
+            owner=request.user,
+        )
+        url = generate_presigned_url(media_file)
+        return Response({
+            "download_url": url,
+            "expires_in": settings.PRESIGNED_URL_EXPIRE_SECONDS,
+})
