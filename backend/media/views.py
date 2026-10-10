@@ -8,7 +8,7 @@ from django.shortcuts import get_object_or_404
 from .serializers import MediaFileSerializer, AlbumSerializer
 from .services import generate_presigned_url
 from django.conf import settings
-
+from .tasks import generate_thumbnail
 
 class MediaListCreateView(ListCreateAPIView):
     permission_classes = [IsAuthenticated]
@@ -18,6 +18,10 @@ class MediaListCreateView(ListCreateAPIView):
     def get_queryset(self):
         return MediaFile.objects.filter(owner=self.request.user)    
 
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        if instance.content_type.startswith("image/"):
+            generate_thumbnail.delay(instance.id)   
 
 class MediaDetailView(RetrieveDestroyAPIView):
     permission_classes = [IsAuthenticated]

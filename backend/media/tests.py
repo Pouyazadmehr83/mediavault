@@ -3,21 +3,20 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
+from django.test import override_settings
 
 from .models import MediaFile, Album
 
 User = get_user_model()
 
-# Minimal valid 1x1 PNG bytes
-TINY_PNG = (
-    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
-    b"\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\rIDATx\x9cc\xf8\xff\xff?"
-    b"\x00\x05\xfe\x02\xfe\r\xefe\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
-)
-
+from io import BytesIO
+from PIL import Image
 
 def generate_test_image(name="test.png"):
-    return SimpleUploadedFile(name, TINY_PNG, content_type="image/png")
+    img = Image.new('RGB', (100, 100), color='red')
+    img_io = BytesIO()
+    img.save(img_io, format='PNG')
+    return SimpleUploadedFile(name, img_io.getvalue(), content_type="image/png")
 
 
 class MediaAPITests(APITestCase):
@@ -135,6 +134,21 @@ class MediaAPITests(APITestCase):
         self.assertIn("download_url", res_url.data)
         self.assertIn("expires_in", res_url.data)
         self.assertTrue(res_url.data["download_url"].startswith("http"))
+
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=True, CELERY_TASK_EAGER_PROPAGATES=True)
+    def test_celery_thumbnail_generation(self):
+        self.client.force_authenticate(user=self.user1)
+        
+        img = generate_test_image("big_photo.png")
+        response = self.client.post(self.list_create_url, {"file": img}, format="multipart")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        
+        file_id = response.data["id"]
+        
+        media_file = MediaFile.objects.get(id=file_id)
+        
+        self.assertTrue(bool(media_file.thumbnail))
+        self.assertTrue(media_file.thumbnail.name.startswith("users/"))
 
 
 class AlbumAPITests(APITestCase):

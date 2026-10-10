@@ -33,7 +33,7 @@ docker-compose.yml
 4. ✅ آپلود با اعتبارسنجی
 5. ✅ Presigned URL
 6. ✅ آلبوم و permission
-7. Thumbnail با Celery
+7. ✅ Thumbnail با Celery
 8. لینک اشتراک موقت
 9. Pagination/فیلتر/جستجو
 10. تست، Swagger، CI
