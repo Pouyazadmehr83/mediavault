@@ -1,12 +1,11 @@
-# pyrefly: ignore [missing-import]
 from rest_framework.generics import ListCreateAPIView, RetrieveDestroyAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .models import MediaFile
+from .models import MediaFile, Album
 from django.shortcuts import get_object_or_404
-from .serializers import MediaFileSerializer
+from .serializers import MediaFileSerializer, AlbumSerializer
 from .services import generate_presigned_url
 from django.conf import settings
 
@@ -42,3 +41,17 @@ class MediaFileURLView(APIView):
             "download_url": url,
             "expires_in": settings.PRESIGNED_URL_EXPIRE_SECONDS,
 })
+
+class AlbumListCreateView(ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = AlbumSerializer
+
+    def get_queryset(self):
+        return Album.objects.filter(owner=self.request.user)
+
+class AlbumDetailView(RetrieveDestroyAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = AlbumSerializer
+
+    def get_queryset(self):
+        return Album.objects.filter(owner=self.request.user)
