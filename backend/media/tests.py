@@ -4,7 +4,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import MediaFile
+from .models import MediaFile, Album
 
 User = get_user_model()
 
@@ -135,3 +135,59 @@ class MediaAPITests(APITestCase):
         self.assertIn("download_url", res_url.data)
         self.assertIn("expires_in", res_url.data)
         self.assertTrue(res_url.data["download_url"].startswith("http"))
+
+
+class AlbumAPITests(APITestCase):
+    def setUp(self):
+        self.user1 = User.objects.create_user(
+            email="user1_album@example.com",
+            password="Password123!",
+            first_name="User",
+            last_name="One",
+        )
+        self.user2 = User.objects.create_user(
+            email="user2_album@example.com",
+            password="Password123!",
+            first_name="User",
+            last_name="Two",
+        )
+        self.album_list_url = reverse("album-list-create")
+
+    def test_create_album(self):
+        self.client.force_authenticate(user=self.user1)
+        data = {
+            "title": "My Vacation",
+            "description": "Photos from 2024",
+            "is_public": False
+        }
+        res = self.client.post(self.album_list_url, data)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data["title"], "My Vacation")
+        self.assertEqual(res.data["owner"], self.user1.id)
+
+    def test_list_albums_isolated(self):
+        Album.objects.create(owner=self.user1, title="User 1 Album")
+        Album.objects.create(owner=self.user2, title="User 2 Album")
+
+        self.client.force_authenticate(user=self.user1)
+        res = self.client.get(self.album_list_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        
+        # Depending on pagination, results might be in res.data["results"] or res.data
+        results = res.data.get("results", res.data) if isinstance(res.data, dict) else res.data
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["title"], "User 1 Album")
+
+    def test_upload_file_to_album(self):
+        self.client.force_authenticate(user=self.user1)
+        album = Album.objects.create(owner=self.user1, title="User 1 Album")
+        
+        img = generate_test_image("album_pic.png")
+        upload_url = reverse("media-list-create")
+        
+        res = self.client.post(upload_url, {"file": img, "album": album.id}, format="multipart")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data["album"], album.id)
+        
+        media_file = MediaFile.objects.get(id=res.data["id"])
+        self.assertEqual(media_file.album, album)
