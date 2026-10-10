@@ -25,6 +25,7 @@ class Album(models.Model):
 class MediaFile(models.Model):
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="media_files")
     file = models.FileField(upload_to=media_upload_path)
+    thumbnail = models.FileField(upload_to=media_upload_path, null=True, blank=True)
     album = models.ForeignKey(Album, on_delete=models.SET_NULL, null=True, blank=True, related_name="media_files")
     original_name = models.CharField(max_length=255)
     content_type = models.CharField(max_length=100)

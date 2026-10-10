@@ -1,4 +1,3 @@
-
 import os
 from pathlib import Path
 from datetime import timedelta
@@ -113,7 +112,11 @@ STORAGES = {
     },  
 }
 
-
+#celery
+CELERY_BROKER_URL = os.getenv(
+    "CELERY_BROKER_URL",
+    "redis://redis:6379/0",
+)
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
