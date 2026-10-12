@@ -9,3 +9,4 @@ celery>=5.3.6
 django-redis>=5.2.0
 redis>=4.2
 pillow>=10.0.0
+django-filter>=24.3,<25.0

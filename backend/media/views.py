@@ -4,6 +4,8 @@ from rest_framework.parsers import MultiPartParser
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.filters import SearchFilter, OrderingFilter
+from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import F
 from .models import MediaFile, Album, ShareLink
 from django.shortcuts import get_object_or_404
@@ -11,11 +13,19 @@ from .serializers import MediaFileSerializer, AlbumSerializer, ShareLinkSerializ
 from .services import generate_presigned_url
 from django.conf import settings
 from .tasks import generate_thumbnail
+from .pagination import StandardResultsSetPagination
+from .filters import MediaFileFilter, AlbumFilter
 
 class MediaListCreateView(ListCreateAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = MediaFileSerializer
     parser_classes = [MultiPartParser]
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = MediaFileFilter
+    search_fields = ["original_name"]
+    ordering_fields = ["created_at", "size", "original_name"]
+    ordering = ["-created_at"]
 
     def get_queryset(self):
         return MediaFile.objects.filter(owner=self.request.user)    
@@ -51,6 +61,12 @@ class MediaFileURLView(APIView):
 class AlbumListCreateView(ListCreateAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = AlbumSerializer
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    filterset_class = AlbumFilter
+    search_fields = ["title", "description"]
+    ordering_fields = ["created_at", "updated_at", "title"]
+    ordering = ["-created_at"]
 
     def get_queryset(self):
         return Album.objects.filter(owner=self.request.user)
@@ -66,6 +82,10 @@ class AlbumDetailView(RetrieveDestroyAPIView):
 class ShareLinkListCreateView(ListCreateAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = ShareLinkSerializer
+    pagination_class = StandardResultsSetPagination
+    filter_backends = [OrderingFilter]
+    ordering_fields = ["created_at", "expires_at", "views_count"]
+    ordering = ["-created_at"]
 
     def get_queryset(self):
         return ShareLink.objects.filter(media_file__owner=self.request.user)
