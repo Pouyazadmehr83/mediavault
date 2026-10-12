@@ -3,9 +3,11 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
+from datetime import timedelta
+from django.utils import timezone
 from django.test import override_settings
 
-from .models import MediaFile, Album
+from .models import MediaFile, Album, ShareLink
 
 User = get_user_model()
 
@@ -205,3 +207,97 @@ class AlbumAPITests(APITestCase):
         
         media_file = MediaFile.objects.get(id=res.data["id"])
         self.assertEqual(media_file.album, album)
+
+
+class ShareLinkAPITests(APITestCase):
+    def setUp(self):
+        self.user1 = User.objects.create_user(
+            email="user1_share@example.com",
+            password="Password123!",
+            first_name="User",
+            last_name="One",
+        )
+        self.user2 = User.objects.create_user(
+            email="user2_share@example.com",
+            password="Password123!",
+            first_name="User",
+            last_name="Two",
+        )
+        self.client.force_authenticate(user=self.user1)
+        image = generate_test_image("share_file.png")
+        res = self.client.post(reverse("media-list-create"), {"file": image}, format="multipart")
+        self.media_file1 = MediaFile.objects.get(id=res.data["id"])
+
+        self.client.force_authenticate(user=self.user2)
+        image2 = generate_test_image("user2_file.png")
+        res2 = self.client.post(reverse("media-list-create"), {"file": image2}, format="multipart")
+        self.media_file2 = MediaFile.objects.get(id=res2.data["id"])
+
+        self.client.logout()
+        self.share_list_create_url = reverse("share-link-list-create")
+
+    def test_create_share_link(self):
+        self.client.force_authenticate(user=self.user1)
+        response = self.client.post(self.share_list_create_url, {"media_file": self.media_file1.id})
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["media_file"], self.media_file1.id)
+        self.assertIn("token", response.data)
+        self.assertFalse(response.data["is_expired"])
+        self.assertEqual(response.data["views_count"], 0)
+
+    def test_cannot_create_share_link_for_other_user_file(self):
+        self.client.force_authenticate(user=self.user1)
+        response = self.client.post(self.share_list_create_url, {"media_file": self.media_file2.id})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_list_and_delete_share_links(self):
+        link1 = ShareLink.objects.create(media_file=self.media_file1)
+        link2 = ShareLink.objects.create(media_file=self.media_file2)
+
+        self.client.force_authenticate(user=self.user1)
+        response = self.client.get(self.share_list_create_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.data.get("results", response.data) if isinstance(response.data, dict) else response.data
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], link1.id)
+
+        # User 1 can delete their own link
+        detail_url = reverse("share-link-detail", kwargs={"pk": link1.id})
+        del_res = self.client.delete(detail_url)
+        self.assertEqual(del_res.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(ShareLink.objects.filter(id=link1.id).exists())
+
+        # User 1 cannot delete User 2's link
+        user2_link_url = reverse("share-link-detail", kwargs={"pk": link2.id})
+        del_other = self.client.delete(user2_link_url)
+        self.assertEqual(del_other.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_public_access_valid_token(self):
+        link = ShareLink.objects.create(media_file=self.media_file1)
+        public_url = reverse("public-share-link", kwargs={"token": link.token})
+
+        # No authentication
+        response = self.client.get(public_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("download_url", response.data)
+        self.assertTrue(response.data["download_url"].startswith("http"))
+        self.assertEqual(response.data["original_name"], self.media_file1.original_name)
+        self.assertEqual(response.data["views_count"], 1)
+
+        # Second access increments views count
+        response2 = self.client.get(public_url)
+        self.assertEqual(response2.status_code, status.HTTP_200_OK)
+        self.assertEqual(response2.data["views_count"], 2)
+
+    def test_public_access_expired_token(self):
+        past_time = timezone.now() - timedelta(hours=1)
+        link = ShareLink.objects.create(media_file=self.media_file1, expires_at=past_time)
+        public_url = reverse("public-share-link", kwargs={"token": link.token})
+
+        response = self.client.get(public_url)
+        self.assertEqual(response.status_code, status.HTTP_410_GONE)
+
+    def test_public_access_invalid_token(self):
+        public_url = reverse("public-share-link", kwargs={"token": "invalidtoken123"})
+        response = self.client.get(public_url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
