@@ -301,3 +301,137 @@ class ShareLinkAPITests(APITestCase):
         public_url = reverse("public-share-link", kwargs={"token": "invalidtoken123"})
         response = self.client.get(public_url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class PaginationFilteringSearchAPITests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            email="filteruser@example.com",
+            password="Password123!",
+            first_name="Filter",
+            last_name="User",
+        )
+        self.client.force_authenticate(user=self.user)
+        self.album1 = Album.objects.create(
+            owner=self.user,
+            title="Vacation Photos",
+            description="Trip to north",
+            is_public=True,
+        )
+        self.album2 = Album.objects.create(
+            owner=self.user,
+            title="Work Invoices",
+            description="Financial records",
+            is_public=False,
+        )
+
+        self.file1 = MediaFile.objects.create(
+            owner=self.user,
+            file=SimpleUploadedFile("vacation1.png", b"test content 1", content_type="image/png"),
+            original_name="vacation1.png",
+            content_type="image/png",
+            size=100,
+            album=self.album1,
+        )
+        self.file2 = MediaFile.objects.create(
+            owner=self.user,
+            file=SimpleUploadedFile("report_invoice.pdf", b"test content 2", content_type="application/pdf"),
+            original_name="report_invoice.pdf",
+            content_type="application/pdf",
+            size=500,
+            album=self.album2,
+        )
+        self.file3 = MediaFile.objects.create(
+            owner=self.user,
+            file=SimpleUploadedFile("unorganized.jpg", b"test content 3", content_type="image/jpeg"),
+            original_name="unorganized.jpg",
+            content_type="image/jpeg",
+            size=1000,
+            album=None,
+        )
+        self.files_url = reverse("media-list-create")
+        self.albums_url = reverse("album-list-create")
+
+    def test_pagination_structure(self):
+        res = self.client.get(self.files_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIn("count", res.data)
+        self.assertIn("next", res.data)
+        self.assertIn("previous", res.data)
+        self.assertIn("results", res.data)
+        self.assertEqual(res.data["count"], 3)
+
+    def test_pagination_custom_page_size(self):
+        res = self.client.get(f"{self.files_url}?page_size=2")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res.data["results"]), 2)
+        self.assertIsNotNone(res.data["next"])
+
+        res_p2 = self.client.get(f"{self.files_url}?page=2&page_size=2")
+        self.assertEqual(res_p2.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res_p2.data["results"]), 1)
+
+    def test_search_files(self):
+        res = self.client.get(f"{self.files_url}?search=invoice")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res.data["results"]), 1)
+        self.assertEqual(res.data["results"][0]["original_name"], "report_invoice.pdf")
+
+        res2 = self.client.get(f"{self.files_url}?search=vacation")
+        self.assertEqual(res2.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res2.data["results"]), 1)
+        self.assertEqual(res2.data["results"][0]["original_name"], "vacation1.png")
+
+    def test_filter_by_content_type(self):
+        res = self.client.get(f"{self.files_url}?content_type=image")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res.data["results"]), 2)
+
+        res_pdf = self.client.get(f"{self.files_url}?content_type=application/pdf")
+        self.assertEqual(res_pdf.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res_pdf.data["results"]), 1)
+        self.assertEqual(res_pdf.data["results"][0]["original_name"], "report_invoice.pdf")
+
+    def test_filter_by_album_and_no_album(self):
+        res_album = self.client.get(f"{self.files_url}?album={self.album1.id}")
+        self.assertEqual(res_album.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res_album.data["results"]), 1)
+        self.assertEqual(res_album.data["results"][0]["original_name"], "vacation1.png")
+
+        res_no_album = self.client.get(f"{self.files_url}?no_album=true")
+        self.assertEqual(res_no_album.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res_no_album.data["results"]), 1)
+        self.assertEqual(res_no_album.data["results"][0]["original_name"], "unorganized.jpg")
+
+    def test_filter_by_size(self):
+        res = self.client.get(f"{self.files_url}?min_size=200&max_size=800")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res.data["results"]), 1)
+        self.assertEqual(res.data["results"][0]["original_name"], "report_invoice.pdf")
+
+    def test_ordering(self):
+        res_asc = self.client.get(f"{self.files_url}?ordering=size")
+        self.assertEqual(res_asc.status_code, status.HTTP_200_OK)
+        sizes = [f["size"] for f in res_asc.data["results"]]
+        self.assertEqual(sizes, [100, 500, 1000])
+
+        res_desc = self.client.get(f"{self.files_url}?ordering=-size")
+        self.assertEqual(res_desc.status_code, status.HTTP_200_OK)
+        sizes_desc = [f["size"] for f in res_desc.data["results"]]
+        self.assertEqual(sizes_desc, [1000, 500, 100])
+
+    def test_album_search_filter_ordering(self):
+        res_search = self.client.get(f"{self.albums_url}?search=Invoices")
+        self.assertEqual(res_search.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res_search.data["results"]), 1)
+        self.assertEqual(res_search.data["results"][0]["title"], "Work Invoices")
+
+        res_public = self.client.get(f"{self.albums_url}?is_public=true")
+        self.assertEqual(res_public.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res_public.data["results"]), 1)
+        self.assertEqual(res_public.data["results"][0]["title"], "Vacation Photos")
+
+        res_ord = self.client.get(f"{self.albums_url}?ordering=title")
+        self.assertEqual(res_ord.status_code, status.HTTP_200_OK)
+        titles = [a["title"] for a in res_ord.data["results"]]
+        self.assertEqual(titles, ["Vacation Photos", "Work Invoices"])
