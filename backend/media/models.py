@@ -1,8 +1,18 @@
 import uuid
 import os
-
 from django.db import models
 from users.models import User
+import secrets
+from django.utils import timezone
+from datetime import timedelta
+
+
+
+def default_expiration():
+    return timezone.now() + timedelta(days=1)
+
+def generate_token():
+    return secrets.token_urlsafe(32)
 
 
 def media_upload_path(instance, filename):
@@ -36,6 +46,18 @@ class MediaFile(models.Model):
         return self.original_name
 
     def delete(self, *args, **kwargs):
-        # Delete the file from MinIO before removing the DB record
         self.file.delete(save=False)
         super().delete(*args, **kwargs)
+
+class ShareLink(models.Model):
+    media_file = models.ForeignKey(MediaFile, on_delete=models.CASCADE, related_name="share_links")
+    token = models.CharField(max_length=64, unique=True, default=generate_token)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(default=default_expiration)
+    views_count = models.IntegerField(default=0)
+
+    def is_expired(self):
+        return timezone.now() > self.expires_at
+
+    def __str__(self):
+        return f"ShareLink for {self.media_file.original_name}"
