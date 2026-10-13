@@ -18,6 +18,7 @@ Designed with production-grade engineering principles: stateless backend archite
 | **Authentication** | JWT (`djangorestframework-simplejwt`) | Stateless token authentication (Access + Refresh tokens) |
 | **Image Processing** | Pillow (PIL) | Automated image resizing and thumbnail generation |
 | **Filtering & Search** | `django-filter` & DRF Filters | Queryset filtering, text search & dynamic pagination |
+| **Frontend** | React 19, Vite, TypeScript, Tailwind CSS 4 | Photo library web app (TanStack Query, Motion, React Router) |
 | **DevOps & Containerization** | Docker & Docker Compose | Multi-container reproducible local and production setup |
 
 ---
@@ -33,14 +34,18 @@ cp .env.example .env
 # 2. Build and launch all services in background
 docker compose up -d --build
 
-# 3. Apply database migrations
+# 3. Apply database migrations and create the storage bucket
 docker compose exec web python manage.py migrate
+docker compose exec web python manage.py ensure_bucket
 ```
+
+Then open **http://localhost:5173** to use the web app.
 
 ### 🌐 Service Endpoints & Ports
 
 | Service | Endpoint | Description |
 |---|---|---|
+| **Web App** | `http://localhost:5173` | React frontend (proxies `/api` to Django) |
 | **Django REST API** | `http://localhost:8000` | Main application API |
 | **MinIO Console** | `http://localhost:9001` | Object storage web dashboard (Credentials from `.env`) |
 | **MinIO S3 API** | `http://localhost:9000` | S3-compatible API endpoint |
@@ -49,9 +54,35 @@ docker compose exec web python manage.py migrate
 
 ---
 
+## 🖥️ Frontend
+
+The web app lives in [`frontend/`](frontend/). It's a React + TypeScript single-page app built with Vite and Tailwind CSS.
+
+**Features**
+- Sign up / sign in with JWT; access tokens refresh silently in the background
+- Photo library grouped by day, with search, sorting, a "Not in Album" filter and infinite scroll
+- Upload by button or by dragging photos anywhere onto the window, with per-file progress
+- Full-screen viewer: keyboard (← → I Esc) and swipe navigation, download, delete, move to album
+- Albums with cover images and photo counts; create, rename, toggle public, delete
+- Expiring share links (1 hour – 30 days), a management page with view counts and revoke, and a public `/s/<token>` page for recipients that needs no login
+- Light / dark / automatic theme, responsive down to phone width, respects reduced-motion and reduced-transparency settings
+
+**Run it outside Docker** (with the API on `localhost:8000`):
+
+```bash
+cd frontend
+npm install
+npm run dev          # http://localhost:5173
+npm run build        # type-check + production bundle in dist/
+```
+
+The Vite dev server proxies `/api/*` to Django, so no CORS setup is needed. Set `VITE_API_PROXY` to point it elsewhere. If you serve the built app from a different origin than the API, list that origin in `CORS_ALLOWED_ORIGINS` (comma-separated) in `.env`.
+
+---
+
 ## 🧪 Automated Testing
 
-Run the full test suite (25 automated unit & integration tests covering authorization, user isolation, uploads, Celery thumbnail generation, share links, pagination, and filters):
+Run the full test suite (30 automated unit & integration tests covering authorization, user isolation, uploads, Celery thumbnail generation, share links, pagination, and filters):
 
 ```bash
 docker compose exec web python manage.py test
@@ -152,6 +183,8 @@ Authorization: Bearer <access_token>
     "id": 1,
     "owner": 4,
     "file": "http://localhost:9000/mediavault-bucket/users/4/d81c...png",
+    "url": "http://localhost:9000/mediavault/users/4/d81c...png?X-Amz-Signature=...",
+    "thumbnail_url": null,
     "album": null,
     "original_name": "avatar.png",
     "content_type": "image/png",
@@ -159,6 +192,8 @@ Authorization: Bearer <access_token>
     "created_at": "2026-10-12T15:00:00Z"
   }
   ```
+> `url` and `thumbnail_url` are presigned, browser-reachable URLs that are valid for one hour. `thumbnail_url` is `null` until the background thumbnail job finishes.
+
 > **Architecture Note:** When an image is uploaded, Celery asynchronously triggers thumbnail generation (200x200) in the background without blocking the HTTP response.
 
 #### 🔹 List Files (Pagination, Filter, Search & Ordering)
@@ -197,6 +232,7 @@ Authorization: Bearer <access_token>
 #### 🔹 Get Direct Download URL (Presigned S3 URL)
 `GET /api/files/<id>/download/`
 - Generates a time-limited cryptographically signed URL for direct download from MinIO. Prevents streaming load bottlenecks on the Django backend.
+- Add `?download=1` to have the URL force a file download (`Content-Disposition: attachment`).
 - **Response (200 OK):**
   ```json
   {
@@ -205,8 +241,9 @@ Authorization: Bearer <access_token>
   }
   ```
 
-#### 🔹 File Details & Deletion
+#### 🔹 File Details, Moving & Deletion
 - Get details: `GET /api/files/<id>/`
+- Move to another album: `PATCH /api/files/<id>/` with `{"album": 2}` (or `{"album": null}` to remove it from its album). Only your own albums are accepted.
 - Delete file (deletes DB record and removes object from MinIO): `DELETE /api/files/<id>/` (Status: `204 No Content`)
 
 ---
@@ -231,6 +268,8 @@ Authorization: Bearer <access_token>
     "title": "Summer Vacation 2026",
     "description": "Trip photos & videos",
     "is_public": false,
+    "media_count": 0,
+    "cover_url": null,
     "created_at": "2026-10-12T14:30:00Z",
     "updated_at": "2026-10-12T14:30:00Z"
   }
@@ -240,8 +279,9 @@ Authorization: Bearer <access_token>
 `GET /api/albums/`
 - **Query Parameters:** `search` (on `title` and `description`), `is_public` (`true`/`false`), `ordering` (`title`, `-created_at`), and pagination (`page`, `page_size`).
 
-#### 🔹 Album Details & Deletion
+#### 🔹 Album Details, Updates & Deletion
 - Get details: `GET /api/albums/<id>/`
+- Update: `PATCH /api/albums/<id>/` with any of `title`, `description`, `is_public`
 - Delete album: `DELETE /api/albums/<id>/`
 
 ---
@@ -307,4 +347,5 @@ Secure, time-limited file sharing without requiring the recipient to register or
 7. ✅ Asynchronous thumbnail generation with Celery & Redis
 8. ✅ Temporary share links with expiration & view tracking
 9. ✅ Dynamic pagination, multi-criteria filtering & search
-10. ⏳ Swagger / OpenAPI documentation & GitHub Actions CI
+10. ✅ React web frontend
+11. ⏳ Swagger / OpenAPI documentation & GitHub Actions CI

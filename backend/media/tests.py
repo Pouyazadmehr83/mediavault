@@ -435,3 +435,63 @@ class PaginationFilteringSearchAPITests(APITestCase):
         self.assertEqual(res_ord.status_code, status.HTTP_200_OK)
         titles = [a["title"] for a in res_ord.data["results"]]
         self.assertEqual(titles, ["Vacation Photos", "Work Invoices"])
+
+
+class FrontendSupportAPITests(APITestCase):
+    def setUp(self):
+        self.user1 = User.objects.create_user(email="fe1@example.com", password="Password123!", first_name="F", last_name="E")
+        self.user2 = User.objects.create_user(email="fe2@example.com", password="Password123!", first_name="F", last_name="E")
+        self.album1 = Album.objects.create(owner=self.user1, title="Mine")
+        self.album2 = Album.objects.create(owner=self.user2, title="Theirs")
+        self.client.force_authenticate(user=self.user1)
+
+    def _upload(self, **extra):
+        res = self.client.post(
+            reverse("media-list-create"),
+            {"file": generate_test_image(), **extra},
+            format="multipart",
+        )
+        return res
+
+    def test_upload_returns_browser_urls(self):
+        res = self._upload()
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(res.data["url"].startswith("http"))
+        self.assertIn("thumbnail_url", res.data)
+
+    def test_cannot_upload_into_other_users_album(self):
+        res = self._upload(album=self.album2.id)
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_move_file_between_albums(self):
+        file_id = self._upload().data["id"]
+        url = reverse("media-detail", kwargs={"pk": file_id})
+
+        res = self.client.patch(url, {"album": self.album1.id}, format="json")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["album"], self.album1.id)
+
+        res = self.client.patch(url, {"album": self.album2.id}, format="json")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+        res = self.client.patch(url, {"album": None}, format="json")
+        self.assertIsNone(res.data["album"])
+
+    def test_album_count_cover_and_update(self):
+        self._upload(album=self.album1.id)
+        res = self.client.get(reverse("album-detail", kwargs={"pk": self.album1.id}))
+        self.assertEqual(res.data["media_count"], 1)
+        self.assertTrue(res.data["cover_url"].startswith("http"))
+
+        res = self.client.patch(
+            reverse("album-detail", kwargs={"pk": self.album1.id}),
+            {"title": "Renamed"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["title"], "Renamed")
+
+    def test_download_url_as_attachment(self):
+        file_id = self._upload().data["id"]
+        res = self.client.get(reverse("media-file-url", kwargs={"pk": file_id}) + "?download=1")
+        self.assertIn("response-content-disposition", res.data["download_url"])

@@ -53,6 +53,18 @@ services:
       retries: 10
       start_period: 10s
 
+  frontend:
+    build: ./frontend
+    environment:
+      VITE_API_PROXY: http://web:8000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - web
+
   celery_worker:
     build: ./backend
     command: celery -A config worker --loglevel=info
